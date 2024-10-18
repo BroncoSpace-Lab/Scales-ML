@@ -37,7 +37,7 @@ def main(folder_path, model_name="microsoft/resnet-50"):
             print(f"Image: {filename}, Predicted class: {predicted_class}")
 
 if __name__ == "__main__":
-    folder_path = "Drone_Data/calibration"
+    folder_path = "/home/scalesagx/scales_ws/Depth-Anything-V2/assets/examples"
     main(folder_path)
 
 # Print PyTorch and Transformers versions for debugging
