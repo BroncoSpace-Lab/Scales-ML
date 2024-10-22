@@ -4,6 +4,24 @@ from datasets import load_dataset
 from PIL import Image
 import os
 import numpy as np
+import time
+from collections import deque
+
+class FPSCounter:
+    def __init__(self, window_size=30):
+        self.frame_times = deque(maxlen=window_size)
+        self.last_time = time.time()
+    
+    def update(self):
+        current_time = time.time()
+        self.frame_times.append(current_time - self.last_time)
+        self.last_time = current_time
+    
+    def get_fps(self):
+        if not self.frame_times:
+            return 0
+        avg_time = sum(self.frame_times) / len(self.frame_times)
+        return 1 / avg_time if avg_time > 0 else 0
 
 def load_model_and_processor(model_name="microsoft/resnet-152"):
     image_processor = AutoImageProcessor.from_pretrained(model_name)
@@ -31,6 +49,8 @@ def main(model_name="microsoft/resnet-152"):
 
     for i, example in enumerate(dataset):
         
+            fps_counter = FPSCounter()
+
             inputs = process_image(example["img"], image_processor)
             inputs = {k: v.to(device) for k, v in inputs.items()}
             
@@ -39,8 +59,13 @@ def main(model_name="microsoft/resnet-152"):
             
             print(f"Image {i}, Predicted class: {predicted_class}")
 
-            #if i >=10:
-            #    break
+            if i % 10 == 0:
+                current_fps = fps_counter.get_fps()
+                print(f"\rProcessing FPS: {current_fps:.2f}", end="")
+            
+            
+            if i >=1000:
+                break
 
 if __name__ == "__main__":
     main()
