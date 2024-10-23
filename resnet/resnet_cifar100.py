@@ -48,8 +48,7 @@ def main(model_name="microsoft/resnet-152"):
     model = model.to(device)
 
     for i, example in enumerate(dataset):
-        
-            fps_counter = FPSCounter()
+    
 
             inputs = process_image(example["img"], image_processor)
             inputs = {k: v.to(device) for k, v in inputs.items()}
@@ -58,12 +57,8 @@ def main(model_name="microsoft/resnet-152"):
             predicted_class = model.config.id2label[predicted_class_idx]
             
             print(f"Image {i}, Predicted class: {predicted_class}")
-
-            if i % 10 == 0:
-                current_fps = fps_counter.get_fps()
-                print(f"\rProcessing FPS: {current_fps:.2f}", end="")
             
-            
+    
             if i >=1000:
                 break
 

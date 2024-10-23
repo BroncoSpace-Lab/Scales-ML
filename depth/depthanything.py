@@ -6,6 +6,7 @@ import os
 from datasets import Dataset
 from tqdm import tqdm  # for progress bar
 
+
 def load_data(folder_path):
     """Load image paths from folder into a dataset"""
     image_files = [f for f in os.listdir(folder_path) 
@@ -32,7 +33,8 @@ def main(folder_path):
     print(f"Found {len(dataset)} images")
 
     # Process each image
-    for idx in tqdm(range(len(dataset))):
+    for i, idx in tqdm(range(len(dataset))):
+        
         example = dataset[idx]
         image_path = example['image_path']
         filename = example['file_name']
