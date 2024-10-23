@@ -115,7 +115,7 @@ if __name__ == "__main__":
         'Total RAM (MB)'
     ]
     results_with_rolling = analyze_csv(
-        file_path='/home/scalesagx/scales-hardware/docs/data/resnet_50W.csv',
+        file_path='/home/scalesagx/scales-hardware/docs/data/depth_15W.csv',
         columns_to_analyze=columns_of_interest,
         window_size=5
     )

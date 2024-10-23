@@ -77,7 +77,7 @@ def main():
             fps_meter.update()
             successful_predictions += 1
             
-            if idx % 100 == 0 and idx > 0:  # Print FPS every 100 images
+            if idx % 1000 == 0 and idx > 0:  # Print FPS every 100 images
                 current_fps = fps_meter.get_fps()
                 print(f"\nCurrent FPS: {current_fps:.2f}")
                 print(f"Successful/Failed: {successful_predictions}/{failed_predictions}")
