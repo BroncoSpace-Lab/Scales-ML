@@ -8,6 +8,16 @@ def parse_timestamp(timestamp_str):
     except ValueError:
         return None
 
+def calculate_total_power(row):
+    """Calculate total power for a single row by summing specified power measurements."""
+    power_components = [
+        row['VDD_GPU_SOC Current (mW)'],
+        row['VDD_CPU_CV Current (mW)'],
+        row['VIN_SYS_5V0 Current (mW)'],
+        row['VDDQ_VDD2_1V8AO Current (mW)'],
+    ]
+    return sum(power_components)
+
 def analyze_csv(file_path, columns_to_analyze=None, window_size=None):
     """
     Analyze CSV file and calculate averages for specified columns.
@@ -27,9 +37,14 @@ def analyze_csv(file_path, columns_to_analyze=None, window_size=None):
     # Read the CSV data, skipping the timestamp line
     df = pd.read_csv(file_path, skiprows=1)
     
-    # If no columns specified, use all numeric columns
+    # Calculate total power for each row
+    df['Total Power (mW)'] = df.apply(calculate_total_power, axis=1)
+    
+    # If no columns specified, use all numeric columns plus the new total power column
     if columns_to_analyze is None:
         columns_to_analyze = df.select_dtypes(include=['float64', 'int64']).columns.tolist()
+    else:
+        columns_to_analyze = list(columns_to_analyze) + ['Total Power (mW)']
     
     results = {
         'timestamp': timestamp,
@@ -78,13 +93,25 @@ def print_results(results):
         print(f"Timestamp: {results['timestamp']}")
     print(f"Total Samples: {results['total_samples']}\n")
     
-    for column, stats in results['analysis'].items():
-        print(f"{column}:")
-        print(f"  Mean: {stats['mean']:.2f}")
-        print(f"  Min:  {stats['min']:.2f}")
-        print(f"  Max:  {stats['max']:.2f}")
-        print(f"  Std:  {stats['std']:.2f}")
+    # Print total power stats first
+    if 'Total Power (mW)' in results['analysis']:
+        power_stats = results['analysis']['Total Power (mW)']
+        print("Total Power (mW):")
+        print(f"  Mean: {power_stats['mean']:.2f}")
+        print(f"  Min:  {power_stats['min']:.2f}")
+        print(f"  Max:  {power_stats['max']:.2f}")
+        print(f"  Std:  {power_stats['std']:.2f}")
         print()
+    
+    # Print other columns
+    for column, stats in results['analysis'].items():
+        if column != 'Total Power (mW)':
+            print(f"{column}:")
+            print(f"  Mean: {stats['mean']:.2f}")
+            print(f"  Min:  {stats['min']:.2f}")
+            print(f"  Max:  {stats['max']:.2f}")
+            print(f"  Std:  {stats['std']:.2f}")
+            print()
 
 def save_results(results, output_file):
     """Save the analysis results to a file."""
@@ -93,29 +120,38 @@ def save_results(results, output_file):
             f.write(f"Timestamp: {results['timestamp']}\n")
         f.write(f"Total Samples: {results['total_samples']}\n\n")
         
-        for column, stats in results['analysis'].items():
-            f.write(f"{column}:\n")
-            f.write(f"  Mean: {stats['mean']:.2f}\n")
-            f.write(f"  Min:  {stats['min']:.2f}\n")
-            f.write(f"  Max:  {stats['max']:.2f}\n")
-            f.write(f"  Std:  {stats['std']:.2f}\n")
+        # Save total power stats first
+        if 'Total Power (mW)' in results['analysis']:
+            power_stats = results['analysis']['Total Power (mW)']
+            f.write("Total Power (mW):\n")
+            f.write(f"  Mean: {power_stats['mean']:.2f}\n")
+            f.write(f"  Min:  {power_stats['min']:.2f}\n")
+            f.write(f"  Max:  {power_stats['max']:.2f}\n")
+            f.write(f"  Std:  {power_stats['std']:.2f}\n")
             f.write("\n")
+        
+        # Save other columns
+        for column, stats in results['analysis'].items():
+            if column != 'Total Power (mW)':
+                f.write(f"{column}:\n")
+                f.write(f"  Mean: {stats['mean']:.2f}\n")
+                f.write(f"  Min:  {stats['min']:.2f}\n")
+                f.write(f"  Max:  {stats['max']:.2f}\n")
+                f.write(f"  Std:  {stats['std']:.2f}\n")
+                f.write("\n")
 
 # Example usage
 if __name__ == "__main__":
-    # Example 1: Analyze all numeric columns
-    #results = analyze_csv('/home/scalesagx/scales_ws/tegrastats_parser/resnet_test.csv')
-    #print_results(results)
-    
-    # Example 2: Analyze specific columns with moving averages
+    # Example with power analysis
     columns_of_interest = [
         'Used RAM (MB)',
         'Used GR3D (%)',
-        ' Temperature (C)',
-        'Total RAM (MB)'
+        'tboard Temperature (C)',
+        'Total RAM (MB)',
+        'Total Power (mW)'  # Added new total power column
     ]
     results_with_rolling = analyze_csv(
-        file_path='/home/scalesagx/scales-hardware/docs/data/depth_15W.csv',
+        file_path='/home/scalesagx/scales-hardware/docs/data/depth_maxn.csv',
         columns_to_analyze=columns_of_interest,
         window_size=5
     )
