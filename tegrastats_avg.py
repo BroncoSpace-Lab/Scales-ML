@@ -151,7 +151,7 @@ if __name__ == "__main__":
         'Total Power (mW)'  # Added new total power column
     ]
     results_with_rolling = analyze_csv(
-        file_path='/home/scalesagx/scales-hardware/docs/data/depth_maxn.csv',
+        file_path='/home/scalesagx/scales-hardware/docs/data/resnet_training_15W.csv',
         columns_to_analyze=columns_of_interest,
         window_size=5
     )

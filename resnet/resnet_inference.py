@@ -3,7 +3,8 @@ from transformers import AutoImageProcessor, ResNetForImageClassification
 from PIL import Image
 import os
 
-def load_model_and_processor(model_name="microsoft/resnet-152"):
+
+def load_model_and_processor(model_name="microsoft/resnet-18"):
     image_processor = AutoImageProcessor.from_pretrained(model_name)
     model = ResNetForImageClassification.from_pretrained(model_name)
     return model, image_processor
@@ -20,7 +21,7 @@ def classify_image(model, inputs):
     predicted_class_idx = torch.argmax(logits, dim=-1).item()
     return predicted_class_idx
 
-def main(folder_path, model_name="microsoft/resnet-152"):
+def main(folder_path, model_name="microsoft/resnet-18"):
     model, image_processor = load_model_and_processor(model_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
