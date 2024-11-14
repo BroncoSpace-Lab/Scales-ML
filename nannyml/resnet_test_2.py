@@ -10,6 +10,7 @@ import nannyml as nml
 from datetime import datetime, timedelta
 from sklearn.model_selection import train_test_split
 import pickle
+from cbpe_esitmator import ModelPerformanceMonitor
 
 class FPSCounter:
     def __init__(self, window_size=30):
@@ -42,7 +43,7 @@ def classify_image(model, inputs):
     with torch.no_grad():
         outputs = model(**inputs)
     logits = outputs.logits
-    probabilities = torch.nn.functional.softmax(logits, dim=1)
+    probabilities = torch.nn.functional.softmax(logits, dim=-1)
     predicted_class_idx = torch.argmax(logits, dim=-1).item()
     return predicted_class_idx, probabilities[0]
 
@@ -163,9 +164,20 @@ def main(model_name="microsoft/resnet-152", num_samples=5000, min_samples_per_cl
     return reference_df, analysis_df, estimated_results
 
 if __name__ == "__main__":
+
     reference_df, analysis_df, estimated_results = main(
         num_samples=1000,
         min_samples_per_class=10
     )
-    reference_df.to_pickle('/home/scalesagx/Scales-ML/nannyml/reference_df')
-    analysis_df.to_pickle('/home/scalesagx/Scales-ML/nannyml/analysis_df')
+    
+    monitor = ModelPerformanceMonitor(
+        n_classes=100,
+        metrics=['accuracy'],
+        problem_type="classification_multiclass"
+    )
+
+    # Run monitoring
+    reference_df, analysis_df, results = monitor.monitor_performance(reference_df, analysis_df)
+
+    # Get performance summary
+    summary = monitor.get_performance_summary(results)
