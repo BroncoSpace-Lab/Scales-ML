@@ -10,6 +10,10 @@ from tqdm import tqdm
 from datasets import load_dataset
 import numpy as np
 from datetime import datetime, timedelta
+from huggingface_hub import PyTorchModelHubMixin
+from safetensors.torch import save_model
+from transformers import AutoTokenizer
+
 
 # Set random seed for reproducibility
 torch.manual_seed(42)
@@ -17,10 +21,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Hyperparameters
 BATCH_SIZE = 128
-NUM_EPOCHS = 10
+NUM_EPOCHS = 1
 LEARNING_RATE = 0.1
 MOMENTUM = 0.9
 WEIGHT_DECAY = 5e-4
+repo_url = "https://huggingface.co/zegaines/scales-resnet"
 
 class CIFAR100Dataset(Dataset):
     def __init__(self, dataset, transform=None):
@@ -40,6 +45,28 @@ class CIFAR100Dataset(Dataset):
             image = transforms.ToTensor()(image)
             
         return image, label
+
+class CustomResNet(nn.Module, PyTorchModelHubMixin):
+    """
+    Custom ResNet model for CIFAR100 with Hugging Face Hub integration
+    """
+    # Metadata for the model card
+    repo_url = "https://huggingface.co/zegaines/scales-resnet"
+    pipeline_tag = "image-classification"
+    license = "mit"
+    
+    def __init__(self, num_classes=100):
+        super().__init__()
+        # Initialize ResNet model
+        self.model = resnet50(num_classes=num_classes)
+        # Modify first conv layer and remove maxpool for CIFAR100
+        self.model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        self.model.maxpool = nn.Identity()
+        
+    def forward(self, x):
+        return self.model(x)
+    
+
 
 def format_time(seconds):
     return str(timedelta(seconds=int(seconds)))
@@ -83,9 +110,7 @@ print(f"Total training batches: {len(trainloader)}")
 print(f"Total test batches: {len(testloader)}")
 
 # Create ResNet model
-model = resnet50(num_classes=100)
-model.conv1 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-model.maxpool = nn.Identity()
+model = CustomResNet(num_classes=100)
 model = model.to(device)
 
 # Loss function and optimizer
@@ -141,6 +166,19 @@ def evaluate(model, testloader, criterion):
     
     return test_loss/len(testloader), 100.*correct/total
 
+def push_model_to_hub(model, metrics, repo_name):
+    """
+    Push the trained model and its metrics to Hugging Face Hub
+    """
+    try:
+        # Push to hub
+        model.push_to_hub(repo_name)
+        model.save_pretrained(repo_name, push_to_hub = True)
+        tokenizer.push_to_hub(repo_name)
+        print(f"Model successfully pushed to https://huggingface.co/{repo_name}")
+    except Exception as e:
+        print(f"Error pushing to hub: {str(e)}")
+
 # Initialize timing metrics
 total_start_time = time.time()
 epoch_times = []
@@ -183,7 +221,7 @@ for epoch in range(NUM_EPOCHS):
             'acc': test_acc,
             'epoch': epoch,
         }
-        torch.save(state, 'resnet_cifar100.pth')
+        torch.save(state, '/home/broncospace/Scales-ML/resnet/resnet_cifar100.pth')
         best_acc = test_acc
 
 total_end_time = time.time()
@@ -206,4 +244,8 @@ metrics = {
     'slowest_epoch': max(epoch_times),
     'best_accuracy': best_acc
 }
-torch.save(metrics, 'training_metrics.pth')
+
+push_model_to_hub(model,"zegaines/scales-resnet",repo_name = "zegaines/scales-resnet")
+print("model saved")
+
+
