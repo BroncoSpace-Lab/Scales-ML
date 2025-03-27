@@ -41,8 +41,10 @@ def classify_image(model, inputs):
     predicted_class_idx = torch.argmax(logits, dim=-1).item()
     return predicted_class_idx
 
-def main(model_name="microsoft/resnet-152"):
-    dataset = load_dataset("uoft-cs/cifar100",split="test")
+def main(folder_path, model_name="microsoft/resnet-152"):
+    if folder_path is None:
+        folder_path = "uoft-cs/cifar100"
+    dataset = load_dataset(folder_path,split="test")
     model, image_processor = load_model_and_processor(model_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)

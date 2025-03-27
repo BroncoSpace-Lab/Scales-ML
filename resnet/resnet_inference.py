@@ -25,6 +25,8 @@ def main(folder_path, model_name="microsoft/resnet-18"):
     model, image_processor = load_model_and_processor(model_name)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
+    
+    output = []
 
     for filename in os.listdir(folder_path):
         if filename.lower().endswith(('.png', '.jpg', '.jpeg')):
@@ -35,7 +37,11 @@ def main(folder_path, model_name="microsoft/resnet-18"):
             predicted_class_idx = classify_image(model, inputs)
             predicted_class = model.config.id2label[predicted_class_idx]
             
-            print(f"Image: {filename}, Predicted class: {predicted_class}")
+            output.append((filename, predicted_class))
+            
+            # print(f"Image: {filename}, Predicted class: {predicted_class}")
+    
+    return output
 
 if __name__ == "__main__":
     folder_path = "/home/scalesagx/scales_ws/Depth-Anything-V2/assets/examples"
