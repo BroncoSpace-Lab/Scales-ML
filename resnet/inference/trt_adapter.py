@@ -1,16 +1,12 @@
-# ResNet adapter for scales_trt.worker
+# ResNet adapter for scales_trt.worker: tag, export_onnx, preprocess, postprocess
 from __future__ import annotations
 
 import json
 import os
 
 import numpy as np
-import torch
-from PIL import Image
 
-H, W, EDGE = 224, 224, 256
-MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
-STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+from resnet.inference.common import CROP, decode, format_result, preprocess_path
 
 
 def tag(model: str) -> str:
@@ -18,22 +14,17 @@ def tag(model: str) -> str:
 
 
 def preprocess(path: str) -> np.ndarray:
-    im = Image.open(path).convert("RGB")
-    w, h = im.size
-    s = EDGE / min(w, h)
-    im = im.resize((int(w * s), int(h * s)), Image.BILINEAR)
-    w, h = im.size
-    l, t = (w - W) // 2, (h - H) // 2
-    a = np.asarray(im.crop((l, t, l + W, t + H)), dtype=np.float32) / 255.0
-    a = (a - MEAN) / STD
-    return np.ascontiguousarray(a.transpose(2, 0, 1)[None])
+    # Same pixels the HF processor gives resnet.inference.pytorch (bicubic resize)
+    return preprocess_path(path)
 
 
 def export_onnx(model: str, onnx_path: str, labels_path: str) -> None:
+    import torch
     from transformers import ResNetForImageClassification
 
     hf = ResNetForImageClassification.from_pretrained(model).eval()
-    json.dump(hf.config.id2label, open(labels_path, "w"))
+    with open(labels_path, "w") as f:
+        json.dump(hf.config.id2label, f)
 
     class Wrap(torch.nn.Module):
         def __init__(self, m):
@@ -44,11 +35,17 @@ def export_onnx(model: str, onnx_path: str, labels_path: str) -> None:
             return self.m(pixel_values=x).logits
 
     w = Wrap(hf).eval()
-    dummy = torch.randn(1, 3, H, W)
+    dummy = torch.randn(1, 3, CROP, CROP)
     os.makedirs(os.path.dirname(onnx_path) or ".", exist_ok=True)
-    torch.onnx.export(w, dummy, onnx_path, opset_version=13, input_names=["input"], output_names=["logits"])
+    kw = dict(opset_version=17, input_names=["input"], output_names=["logits"])
+    with torch.no_grad():
+        try:
+            # TorchScript exporter: single self-contained file, no onnxscript needed
+            torch.onnx.export(w, dummy, onnx_path, dynamo=False, **kw)
+        except TypeError:  # torch < 2.5 has no `dynamo` argument
+            torch.onnx.export(w, dummy, onnx_path, **kw)
 
 
 def postprocess(y: np.ndarray, labels: dict) -> str:
-    i = int(np.argmax(y, axis=-1))
-    return labels.get(str(i), labels.get(i, f"class_{i}"))
+    _, label, prob = decode(y, labels)
+    return format_result(label, prob)

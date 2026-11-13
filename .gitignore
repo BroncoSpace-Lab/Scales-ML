@@ -21,3 +21,6 @@ mnist/data/MNIST/raw/t10k-labels-idx1-ubyte
 mnist/data/MNIST/raw/train-images-idx3-ubyte
 mnist/data/MNIST/raw/train-labels-idx1-ubyte
 
+
+# Pinned GPU environment for the Jetson (installed by fprime-scales-ref make jetson-setup)
+!requirements-jetson.txt

@@ -1,0 +1,24 @@
+# GPU inference environment for the Jetson (JetPack 6.x, L4T R36.4, CUDA 12.6).
+#
+# Installed into fprime-scales-ref/ml-venv by `make jetson-setup`:
+#   /usr/bin/python3 -m venv --system-site-packages ml-venv   # sees JetPack's tensorrt
+#   ml-venv/bin/pip install -r Components/MLComponent/Scales-ML/requirements-jetson.txt
+#
+# torch/torchvision MUST be NVIDIA's Jetson builds (CUDA 12.6, Python 3.10).
+# PyPI's aarch64 torch wheels are built for CUDA 13 / server GPUs and fall back
+# to CPU on JetPack 6, and pip would prefer them over the Jetson wheels if both
+# indexes were searched, so the Jetson wheels are pinned by URL + sha256.
+# Source: https://pypi.jetson-ai-lab.io/jp6/cu126 (NVIDIA Jetson AI Lab)
+# torch also links libcudss.so.0 (cuDSS), which JetPack lacks; jetson-ml-setup.sh
+# installs NVIDIA's Tegra build of it system-wide.
+torch @ https://pypi.jetson-ai-lab.io/jp6/cu126/+f/46b/b8b13f844b211/torch-2.11.0-cp310-cp310-linux_aarch64.whl#sha256=46bb8b13f844b2111f6f41abc703d01075a7185e0c587cb002e957ede2b8c8a3
+torchvision @ https://pypi.jetson-ai-lab.io/jp6/cu126/+f/d11/6f08d3d62417d/torchvision-0.26.0-cp310-cp310-linux_aarch64.whl#sha256=d116f08d3d62417dc36cbf41923e491b8b49b77399575f0878ae391e6e77a159
+
+# NumPy 2.2 is the last series supporting Python 3.10
+numpy==2.2.6
+pillow==12.2.0
+transformers==5.12.1
+onnx==1.23.2
+
+# YOLO (yolo.inference.*)
+ultralytics==8.4.75

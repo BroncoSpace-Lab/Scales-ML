@@ -39,8 +39,20 @@ def export_onnx(weights: str, onnx_path: str, labels_path: str) -> None:
     from ultralytics import YOLO
 
     m = YOLO(weights)
-    json.dump(getattr(m, "names", {}) or {}, open(labels_path, "w"))
-    out = m.export(format="onnx", imgsz=SZ, opset=13, dynamic=False, simplify=False)
+    with open(labels_path, "w") as f:
+        json.dump(getattr(m, "names", {}) or {}, f)
+    # ultralytics exports ONNX on the CPU by setting CUDA_VISIBLE_DEVICES="" in
+    # this process, which then hides the GPU from the TensorRT build that the
+    # worker runs right after ("no CUDA-capable device is detected", abort).
+    # CUDA isn't initialised yet at this point, so restoring the variable is enough.
+    saved = os.environ.get("CUDA_VISIBLE_DEVICES")
+    try:
+        out = m.export(format="onnx", imgsz=SZ, opset=13, dynamic=False, simplify=False)
+    finally:
+        if saved is None:
+            os.environ.pop("CUDA_VISIBLE_DEVICES", None)
+        else:
+            os.environ["CUDA_VISIBLE_DEVICES"] = saved
     src = str(out) if out else os.path.splitext(weights)[0] + ".onnx"
     if os.path.isfile(src) and os.path.abspath(src) != os.path.abspath(onnx_path):
         shutil.copy2(src, onnx_path)

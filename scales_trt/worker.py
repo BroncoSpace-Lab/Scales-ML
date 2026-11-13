@@ -54,6 +54,10 @@ def _infer(adapter_mod: str, folder: str, model: str, cache_dir: str):
     files = [f for f in sorted(os.listdir(folder)) if f.lower().endswith(IMAGE_EXT)]
     if not files:
         return [], {"images": 0, "seconds": 0.0, "fps": None}
+    import numpy as np
+
+    runtime.run(session, np.zeros(session.in_buf.numel(), dtype=np.float32))  # warm-up
+    print(f"[TRT] engine {os.path.basename(eng)} on {runtime.device_name()}", file=sys.stderr, flush=True)
     t0 = time.time()
     out = []
     for name in files:
@@ -62,7 +66,7 @@ def _infer(adapter_mod: str, folder: str, model: str, cache_dir: str):
         out.append((name, ad.postprocess(y, labels)))
     dt = time.time() - t0
     n = len(out)
-    return out, {"images": n, "seconds": dt, "fps": (n / dt) if dt else None}
+    return out, {"images": n, "seconds": dt, "fps": (n / dt) if dt else None, "device": runtime.device_name()}
 
 
 def main(argv=None) -> int:
@@ -71,12 +75,14 @@ def main(argv=None) -> int:
     base = argparse.ArgumentParser(add_help=False)
     base.add_argument("--adapter", required=True)
     base.add_argument("--model", required=True)
-    base.add_argument("--fp16", type=int, default=1)
+    base.add_argument("--fp16", type=int, default=None, help="1/0; overrides TRT_FP16 when given")
     base.add_argument("--cache-dir", default=CACHE)
     sub.add_parser("prepare", parents=[base])
     inf = sub.add_parser("infer", parents=[base])
     inf.add_argument("--folder", required=True)
     args = p.parse_args(argv)
+    if args.fp16 is not None:  # otherwise TRT_FP16 (default 1) decides
+        os.environ["TRT_FP16"] = "1" if args.fp16 else "0"
     try:
         if args.cmd == "prepare":
             _out({"ok": True, "stats": _prepare(args.adapter, args.model, args.cache_dir)})
@@ -85,7 +91,10 @@ def main(argv=None) -> int:
             _out({"ok": True, "outputs": outputs, "stats": stats})
         return 0
     except Exception as e:
-        _out({"ok": False, "error": str(e)})
+        import traceback
+
+        traceback.print_exc(file=sys.stderr)
+        _out({"ok": False, "error": f"{type(e).__name__}: {e}"})
         return 2
 
 

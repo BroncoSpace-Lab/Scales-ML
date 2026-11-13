@@ -14,6 +14,10 @@ import tensorrt as trt
 import torch
 
 
+def device_name() -> str:
+    return f"cuda:{torch.cuda.get_device_name(0)}" if torch.cuda.is_available() else "cpu"
+
+
 def cache_paths(cache_dir: str, tag: str) -> dict:
     return {
         "onnx": os.path.join(cache_dir, f"{tag}.onnx"),
@@ -132,15 +136,20 @@ def load_session(engine_bytes: bytes) -> TrtSession:
 
 
 def run(sess: TrtSession, x: np.ndarray) -> np.ndarray:
-    t = torch.from_numpy(x).cuda().reshape(-1)
-    if sess.in_buf.dtype == torch.float16:
-        t = t.half()
-    sess.in_buf.copy_(t)
+    src = torch.from_numpy(np.ascontiguousarray(x, dtype=np.float32)).reshape(-1)
+    if src.numel() != sess.in_buf.numel():
+        raise ValueError(f"input has {src.numel()} values, engine expects {sess.in_buf.numel()}")
+    # Copy in, execute, and copy out all on the session stream, so the engine
+    # can never read the input buffer before the host->device copy finishes
+    # (previously the copy ran on the default stream with no dependency).
     with torch.cuda.stream(sess.stream):
+        sess.in_buf.copy_(src)  # H2D (+ cast to fp16 if the engine input is fp16)
         if sess.trt10:
-            sess.ctx.execute_async_v3(sess.stream.cuda_stream)
+            ok = sess.ctx.execute_async_v3(sess.stream.cuda_stream)
         else:
-            sess.ctx.execute_async_v2(sess.bindings, sess.stream.cuda_stream)
+            ok = sess.ctx.execute_async_v2(sess.bindings, sess.stream.cuda_stream)
+        out = sess.out_buf.float() if sess.out_buf.dtype != torch.float32 else sess.out_buf.clone()
+    if ok is False:
+        raise RuntimeError("TensorRT execute failed")
     sess.stream.synchronize()
-    out = sess.out_buf.float() if sess.out_buf.dtype != torch.float32 else sess.out_buf
     return out.cpu().numpy().reshape(sess.out_shape)

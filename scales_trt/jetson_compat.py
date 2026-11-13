@@ -1,8 +1,18 @@
 # Jetson: torch.load(weights_only) + torchvision NMS without C++ ops
 def apply_jetson_compat() -> None:
+    import inspect
+
     import torch
 
-    if not getattr(torch.load, "_scales", False):
+    # Old Jetson torch builds (< 1.13) reject the `weights_only` argument that
+    # ultralytics passes. Strip it only there: on torch >= 2.6 dropping it would
+    # turn ultralytics' explicit weights_only=False into the new default True,
+    # and loading yolov8n.pt then fails with "Weights only load failed".
+    try:
+        accepts = "weights_only" in inspect.signature(torch.load).parameters
+    except (TypeError, ValueError):
+        accepts = True
+    if not accepts and not getattr(torch.load, "_scales", False):
         orig = torch.load
 
         def load(*a, **k):

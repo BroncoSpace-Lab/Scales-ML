@@ -1,77 +1,103 @@
 # Scales-ML
 
-How to add a **new model** to SCALES F´. To run ResNet/YOLO that already exist, see [fprime-scales-ref](https://github.com/BroncoSpace-Lab/fprime-scales-ref).
+Machine-learning code for the SCALES testbench. F´ flight software on the
+Jetson (`JetsonDeployment`, component `jetson_mlManager`) imports the
+**flight inference** modules in this repo to classify images taken by the
+Lucid camera. Everything else here is an experiment that F´ never calls.
 
-## What F´ needs
+This repo is a submodule of
+[fprime-scales-ref](https://github.com/BroncoSpace-Lab/fprime-scales-ref) at
+`Components/MLComponent/Scales-ML`.
 
-A Python module with `main(folder)` that returns a list of `(filename, result_string)` pairs — one per image in the folder from `SET_INFERENCE_PATH`.
+## Documentation
 
-Example: `SET_ML_PATH "mymodel.inference.tensorrt"`
+| Page | Read it to learn |
+|---|---|
+| [docs/inference-pipeline.md](docs/inference-pipeline.md) | What happens from `SAVE_PNG` to the `InferenceOutput` event, the two runtimes (PyTorch and TensorRT), what each needs to run on CUDA, and known accuracy issues |
+| [docs/resnet-18.md](docs/resnet-18.md) | How ResNet-18 turns a camera image into a label: preprocessing, layers, tensor shapes, and why camera images are harder than test images |
+| [docs/adding-a-model.md](docs/adding-a-model.md) | How to add a new model that F´ can select with `SET_ML_PATH` |
 
-## 1. Copy a model folder
+The F´ side (commands, events, how `MLComponent` loads modules) is documented
+in the parent repo: `Components/MLComponent/docs/sdd.md`.
 
-Duplicate `yolo/` → `mymodel/` (or `resnet/` for classification). You need:
+## At a glance
 
+```mermaid
+flowchart LR
+    CAM["Lucid camera<br/>RunLucidCamera.SAVE_PNG"] -->|"Images/image_NNNN.png"| DIR[("build-artifacts/python/Images")]
+    GDS["GDS / demo.seq"] -->|"SET_ML_PATH<br/>SET_INFERENCE_PATH<br/>MULTI_INFERENCE"| MLC["MLComponent<br/>(fprime-venv, Python 3.12)"]
+    DIR --> MLC
+    MLC -->|"main(folder)"| PT["resnet.inference.pytorch<br/>in-process"]
+    MLC -->|"main(folder)"| TRT["resnet.inference.tensorrt<br/>subprocess: /usr/bin/python3"]
+    PT --> OUT["[(filename, label), ...]"]
+    TRT --> OUT
+    OUT -->|"InferenceOutput event per image"| GDS
 ```
-mymodel/inference/trt_adapter.py   # export ONNX + preprocess + postprocess
-mymodel/inference/tensorrt.py      # thin TRT wrapper
-```
 
-Add empty `__init__.py` files in `mymodel/` and `mymodel/inference/` if missing.
+## Flight entry points
 
-## 2. Edit `trt_adapter.py`
+| `SET_ML_PATH` value | Model | Runs in | One-time setup |
+|---|---|---|---|
+| `resnet.inference.pytorch` | ResNet-18, ImageNet (1,000 classes) | F´ process (`fprime-venv`) | None |
+| `resnet.inference.tensorrt` | ResNet-18, ImageNet | Subprocess, JetPack Python + TensorRT | `make ml-trt-setup` |
+| `yolo.inference.pytorch` | YOLOv8n, COCO (80 classes) | Subprocess, ultralytics | None |
+| `yolo.inference.tensorrt` | YOLOv8n, COCO | Subprocess, JetPack Python + TensorRT | `make ml-trt-setup MODEL=yolo` |
 
-Start from `yolo/inference/trt_adapter.py` or `resnet/inference/trt_adapter.py`. Keep these four functions:
+`Sequences/demo.seq` uses `resnet.inference.pytorch`.
 
-- `tag` — unique name for the TRT cache
-- `export_onnx` — writes ONNX + labels (runs once during `make ml-trt-setup`)
-- `preprocess` — one image → NCHW float32 numpy array
-- `postprocess` — TRT output → one short string for GDS
-
-`preprocess` input size must match the ONNX you export.
-
-## 3. Edit `tensorrt.py`
-
-Copy `yolo/inference/tensorrt.py` and set your adapter path and model id:
+Every entry point implements the same contract:
 
 ```python
-ADAPTER = "mymodel.inference.trt_adapter"
-MODEL = "your-weights-or-model-id"
-
-def main(folder: str, model: str = MODEL):
-    return trt_infer(ADAPTER, folder, model, "MyModel-TRT")
+def main(folder: str) -> list[tuple[str, str]]:
+    """One (filename, result string) pair per .png/.jpg/.jpeg in folder, sorted by name."""
 ```
 
-## 4. Hook up fprime-scales-ref
+## Run from the command line
 
-In the parent repo:
-
-- **`scripts/jetson-python.sh`** — add `"$ML/mymodel"` to the `cp -r` line
-- **`scripts/ml_trt_setup.sh`** — add a `mymodel)` case (copy the `yolo)` block, change adapter + model name)
-
-On the Jetson:
+Set up once from the parent repo root with `make jetson-setup` (installs
+JetPack's CUDA/TensorRT, creates `ml-venv`, caches weights, builds engines,
+runs the self-test). Then:
 
 ```bash
-make build-jetson
-MODEL=mymodel make ml-trt-setup    # one-time; can take a long time
-bash scripts/jetson-python.sh      # after code changes
+cd Components/MLComponent/Scales-ML
+
+# Exactly what F´ does: fprime-venv hands the work to ml-venv on the GPU
+../../../fprime-venv/bin/python -m resnet.inference.pytorch ../../../test-imagery
+../../../fprime-venv/bin/python -m resnet.inference.tensorrt ../../../test-imagery
+
+# Directly in the GPU interpreter
+../../../ml-venv/bin/python -m resnet.inference.pytorch ../../../test-imagery
+
+# Health check: CUDA stack, then preprocessing/CUDA/TensorRT/golden-label self-test
+../../../ml-venv/bin/python -m scales_trt.cuda_check
+../../../ml-venv/bin/python -m resnet.inference.selftest ../../../test-imagery
 ```
 
-## 5. Test and run
+The PyTorch path prints `device: cuda` in its timing block; on a Jetson it
+refuses to fall back to the CPU (set `SCALES_ML_DEVICE=cpu` to allow it). See
+[Two Pythons](docs/inference-pipeline.md#two-pythons-why-inference-runs-in-a-child-process)
+for why `ml-venv` exists.
 
-```bash
-cd build-python-fprime-aarch64-linux
-/usr/bin/python3 -m mymodel.inference.tensorrt /path/to/test-imagery
+## Layout
+
 ```
-
-Then in GDS:
-
-```text
-jetson_mlManager.SET_ML_PATH "mymodel.inference.tensorrt"
-jetson_mlManager.SET_INFERENCE_PATH "../test-imagery"
-jetson_mlManager.MULTI_INFERENCE
+Scales-ML/
+├── README.md
+├── docs/                     This documentation
+├── scales_trt/               [flight] Shared TensorRT runtime and F´ subprocess bridge
+│   ├── fprime_wrap.py        Starts the worker under /usr/bin/python3, parses its JSON reply
+│   ├── worker.py             CLI: `prepare` (export + build engine) | `infer` (run a folder)
+│   ├── runtime.py            Build, load, and execute TensorRT engines (TRT 8/9/10)
+│   └── jetson_compat.py      Workarounds for Jetson torch/torchvision builds (YOLO)
+├── resnet/
+│   ├── inference/            [flight]
+│   │   ├── pytorch.py        ResNet-18 via Hugging Face + PyTorch, in the F´ process
+│   │   ├── tensorrt.py       ResNet-18 via TensorRT (entry point)
+│   │   └── trt_adapter.py    ONNX export, preprocess, postprocess for TensorRT
+│   └── *.py                  Experiments: CIFAR-100 runs, FPS benchmark, training
+├── yolo/inference/           [flight] Same structure as resnet/inference/
+├── yolo/camera*.py           USB-camera live detection demos
+├── mnist/ depth/ phi3/       Experiments: small CNN, depth estimation, small LLM
+├── nannyml/                  Experiments: label-free accuracy estimation
+└── tegrastats_avg.py         Jetson power/thermal log summary
 ```
-
-## PyTorch only (no TensorRT)
-
-Copy `yolo/inference/pytorch.py`, implement `main(folder)`, add `mymodel` to `jetson-python.sh`, use `SET_ML_PATH "mymodel.inference.pytorch"`. No `ml-trt-setup`.
