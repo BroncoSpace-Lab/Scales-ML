@@ -319,7 +319,7 @@ Remaining limits:
 
 | Limit | Effect | What to do |
 |---|---|---|
-| Camera link negotiates **100 Mb/s half duplex** on the testbench | Most frames lose packets; `SAVE_PNG` may need many tries | Check `ethtool <iface>`; replace the cable, switch, or PoE injector until it reports 1000 Mb/s Full |
+| Camera network must run at **1000 Mb/s full duplex** | At 100 Mb/s half duplex nearly every frame lost packets (~3 fps, 100% incomplete). The bench switch's `LED2_1` strap had forced 100 Mb/s; fixed 2026-11-13: 33.6 fps, 0% incomplete | If links drop to 100/half, check the switch strap DIP switches (all OFF) and reset the switch; see the parent repo's README troubleshooting |
 | Lens out of focus on the testbench | Blurry frames → low-confidence, wrong labels | Adjust the focus ring |
 | ImageNet's 1,000 classes only | Objects outside them can't be labeled correctly | Point the camera at ImageNet-class objects for demos, or fine-tune on the target objects |
 | ResNet-18 is a small model (~70% top-1 on ImageNet) | Even clean images are often wrong at low confidence | Use the reported confidence; consider a larger model with a TensorRT engine |
